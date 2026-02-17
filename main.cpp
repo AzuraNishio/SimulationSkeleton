@@ -55,10 +55,10 @@ using Cell = std::list<Particle*>;
 using Grid = std::vector<Cell>;
 
 enum ParticleType {
-    F,
-    A,
-    B,
-    S,
+    Resource,
+    Catalist,
+    Intermediary,
+    Membrane,
     L
 };
 
@@ -80,7 +80,10 @@ struct Particle {
     Cell* cell;
 };
 
+#pragma region mathUttils
+
 //////////////////////////////////////////////////////////////////////////////
+
 float angleFromVector(sf::Vector2f v) {
     return std::atan2(v.y, v.x);
 }
@@ -164,6 +167,8 @@ double middleAngle(double theta1, double theta2) {
     return middle;
 }
 
+
+
 //////////////////////////////////////////////////////////////////////////////
 /*sf::Color getColor(int type) {
     // Convert the type to a hue value between 0 and 360 degrees
@@ -196,15 +201,17 @@ double middleAngle(double theta1, double theta2) {
     return sf::Color((r + m) * 255, (g + m) * 255, (b + m) * 255);
 }*/
 
+#pragma endregion
+
 sf::Color getColor(const ParticleType& iParticleType) {
     switch (iParticleType) {
-    case F:
+    case Resource:
         return sf::Color::Green;
-    case A:
+    case Catalist:
         return sf::Color::Red;
-    case B:
+    case Intermediary:
         return sf::Color::Magenta;
-    case S:
+    case Membrane:
         return sf::Color(255, 200, 0); // RGB values for yolk
     case L:
         return sf::Color(27, 227, 243); // RGB values for clear blue
@@ -441,7 +448,7 @@ struct Model {
                         sf::Vector2f force(0.0, 0.0);
                         float torque = 0.0;
                         // Surfactant molecules S interaction model
-                        if (p.type == ParticleType::S && other.type == ParticleType::S)
+                        if (p.type == ParticleType::Membrane && other.type == ParticleType::Membrane)
                         {
                             if (rNorm < g_interaction_radius) {  // Consider only particles within the interaction radius
                                 // Calculate force and torque using appropriate model
@@ -461,11 +468,11 @@ struct Model {
                                 }
                             }
                         }
-                        else if ((p.type == ParticleType::S && (other.type == ParticleType::A ||
-                                                                other.type == ParticleType::B ||
+                        else if ((p.type == ParticleType::Membrane && (other.type == ParticleType::Catalist ||
+                                                                other.type == ParticleType::Intermediary ||
                                                                 other.type == ParticleType::L)) ||
-                                 (other.type == ParticleType::S && (p.type == ParticleType::A ||
-                                                                    p.type == ParticleType::B ||
+                                 (other.type == ParticleType::Membrane && (p.type == ParticleType::Catalist ||
+                                                                    p.type == ParticleType::Intermediary ||
                                                                     p.type == ParticleType::L)))
                         {
                             // Surfactant molecules S walling model
@@ -473,37 +480,37 @@ struct Model {
                                 // Negative for repulsion
                                 //calculateForce_quadraticAttraction(-0.001, r, rNorm, force);
                                 float factor = std::pow(2.0*DOT_SIZE/rNorm, 6);
-                                p.force += -r * factor * (p.type != ParticleType::S ? 10.0f : 0.001f);
+                                p.force += -r * factor * (p.type != ParticleType::Membrane ? 10.0f : 0.001f);
                                 p.force += force;
                             }
                         }
-                        else if ((p.type == ParticleType::A && other.type == ParticleType::F) ||
-                                 (other.type == ParticleType::A && p.type == ParticleType::F))
+                        else if ((p.type == ParticleType::Catalist && other.type == ParticleType::Resource) ||
+                                 (other.type == ParticleType::Catalist && p.type == ParticleType::Resource))
                         {
                             //Chemical force 1: F makes B when catalysed by A
                             if (rNorm < g_interaction_radius/2.0) {
                                 //Maybe TODO a commit mecahnism
-                                if (p.type == ParticleType::F) {p.type = ParticleType::B; p.spawnStep = _step;}
-                                if (other.type == ParticleType::F) {other.type = ParticleType::B; other.spawnStep = _step;}
+                                if (p.type == ParticleType::Resource) {p.type = ParticleType::Intermediary; p.spawnStep = _step;}
+                                if (other.type == ParticleType::Resource) {other.type = ParticleType::Intermediary; other.spawnStep = _step;}
                             }
                         }
-                        else if ((p.type == ParticleType::B && other.type == ParticleType::F) ||
-                                 (other.type == ParticleType::B && p.type == ParticleType::F))
+                        else if ((p.type == ParticleType::Intermediary && other.type == ParticleType::Resource) ||
+                                 (other.type == ParticleType::Intermediary && p.type == ParticleType::Resource))
                         {
                             //Chemical force 2: F + B makes A + S
                             if (rNorm < g_interaction_radius/2.0) {
-                                p.type = ParticleType::A;
-                                other.type = ParticleType::S;
+                                p.type = ParticleType::Catalist;
+                                other.type = ParticleType::Membrane;
                                 p.spawnStep = _step;
                                 other.spawnStep = _step;
                             }
                         }
-                        else if ((p.type == ParticleType::L && other.type == ParticleType::A) ||
-                                 (other.type == ParticleType::A && p.type == ParticleType::L))
+                        else if ((p.type == ParticleType::L && other.type == ParticleType::Catalist) ||
+                                 (other.type == ParticleType::Catalist && p.type == ParticleType::L))
                         {
                             //Chemical force 3: R + A makes R + F // Test reaction limitor
                             if (rNorm < g_interaction_radius/2.0) {
-                                p.type = ParticleType::F;
+                                p.type = ParticleType::Resource;
                                 other.type = ParticleType::L;
                                 p.spawnStep = _step;
                                 other.spawnStep = _step;
@@ -547,7 +554,7 @@ struct Model {
             // Brownian motion model
             // Particle are boosted in the direction of their velocity below a given value.
             // + a rotation perturbation
-            if (p.type == ParticleType::S) {
+            if (p.type == ParticleType::Membrane) {
                 if (norm(p.velocity) <= g_temp_speed)
                 {
                     p.force += 0.01f*p.velocity / g_dt;
@@ -625,7 +632,7 @@ void drawModel(sf::RenderWindow& ioWindow, const sf::RectangleShape& iWorldRect,
         //}
 
         // Tail
-        if (p.type == ParticleType::S) {
+        if (p.type == ParticleType::Membrane) {
             float tailLength = 10.0;
             sf::Vertex line[] =
                 {
@@ -679,7 +686,7 @@ void drawModel(sf::RenderWindow& ioWindow, const sf::RectangleShape& iWorldRect,
         //ioWindow.draw(lines);
 
         //Draw interaction radius
-        if (p.type == ParticleType::S && g_draw_s_interaction_radius) {
+        if (p.type == ParticleType::Membrane && g_draw_s_interaction_radius) {
             sf::CircleShape circle(g_interaction_radius);  // Radius of the circle
             circle.setFillColor(sf::Color::Transparent);  // Set the fill color to transparent
             circle.setOutlineThickness(0.1f);  // Set the outline thickness
@@ -718,7 +725,7 @@ int main()
 
     // Create a sf::RectangleShape with the given world size
     sf::RectangleShape worldRect(sf::Vector2f(WORLD_WIDTH, WORLD_HEIGTH));
-    worldRect.setOutlineThickness(4.0f); // Adjust as needed
+    worldRect.setOutlineThickness(2.0f); // Adjust as needed
     worldRect.setOutlineColor(sf::Color::Red);
     worldRect.setFillColor(sf::Color::Transparent);
     worldRect.setOrigin(WORLD_WIDTH / 2.0f, WORLD_HEIGTH / 2.0f);
@@ -740,9 +747,9 @@ int main()
             case sf::Event::MouseWheelScrolled:
                 // If the wheel scrolled up, zoom in, else zoom out
                 if (event.mouseWheelScroll.delta > 0)
-                    view.zoom(0.9f);
+                    view.zoom(1.0f);
                 else
-                    view.zoom(1.1f);
+                    view.zoom(1.0f);
                 break;
             case sf::Event::MouseButtonPressed:
                 if (!ImGui::GetIO().WantCaptureMouse) {
@@ -782,17 +789,36 @@ int main()
                         myModel.plug.removeParticle(p);
                     myModel.particles.clear();
                 }
+                //Custom better camera movement
+                //pam
+                if (event.key.code == sf::Keyboard::W)
+                    view.move(0, -10);
+                if (event.key.code == sf::Keyboard::S)
+                    view.move(0, 10);
+                if (event.key.code == sf::Keyboard::D)
+                    view.move(10, 0);
+                if (event.key.code == sf::Keyboard::A)
+                    view.move(-10, 0);
+                
+                //zoom
+                if (event.key.code == sf::Keyboard::E)
+                    view.zoom(0.9f);
+                if (event.key.code == sf::Keyboard::Q)
+                    view.zoom(1.1f);
+
+
+
                 if (event.key.code == sf::Keyboard::C)
                     g_centerize = !g_centerize;
-                if (event.key.code == sf::Keyboard::S)
-                    myModel.spawn(ParticleType::S, mousePxPosForSpawn, myModel._step);
-                if (event.key.code == sf::Keyboard::F)
-                    myModel.spawn(ParticleType::F, mousePxPosForSpawn, myModel._step);
-                if (event.key.code == sf::Keyboard::A)
-                    myModel.spawn(ParticleType::A, mousePxPosForSpawn, myModel._step);
-                if (event.key.code == sf::Keyboard::B)
-                    myModel.spawn(ParticleType::B, mousePxPosForSpawn, myModel._step);
-                if (event.key.code == sf::Keyboard::L)
+                if (event.key.code == sf::Keyboard::Num1)
+                    myModel.spawn(ParticleType::Membrane, mousePxPosForSpawn, myModel._step);
+                if (event.key.code == sf::Keyboard::Num2)
+                    myModel.spawn(ParticleType::Resource, mousePxPosForSpawn, myModel._step);
+                if (event.key.code == sf::Keyboard::Num3)
+                    myModel.spawn(ParticleType::Catalist, mousePxPosForSpawn, myModel._step);
+                if (event.key.code == sf::Keyboard::Num4)
+                    myModel.spawn(ParticleType::Intermediary, mousePxPosForSpawn, myModel._step);
+                if (event.key.code == sf::Keyboard::Num5)
                     myModel.spawn(ParticleType::L, mousePxPosForSpawn, myModel._step);
                 break;
             }
@@ -826,9 +852,10 @@ int main()
         ImGui::Checkbox("Destroy at boundary", &g_destroy_at_boundary);
         ImGui::Checkbox("Draw S Interaction Radius", &g_draw_s_interaction_radius);
         ImGui::Checkbox("Spawn particules at mouse location", &g_spawn_at_mouse_location);
-        ImGui::Text("S,F,A,B key to spawn particles");
+        ImGui::Text("1,2,3,4 key to spawn particles");
         ImGui::Text("C key to center");
         ImGui::Text("R key to reset");
+        ImGui::Text("WASD for movement, qe to zoom");
         ImGui::End();
 
         // Check for mouse dragging
@@ -848,7 +875,7 @@ int main()
         // Spawning
         if (g_source)
         {
-            myModel.spawn(ParticleType::F, g_source_pos, myModel._step);
+            myModel.spawn(ParticleType::Resource, g_source_pos, myModel._step);
         }
 
         // Model update
